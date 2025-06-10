@@ -70,6 +70,13 @@ detect_os() {
 install_packages() {
     log_info "Installing packages..."
     $UPDATE_CMD
+    
+    # Install curl first if not available (for Ubuntu)
+    if [ "$OS" = "ubuntu" ] && ! command -v curl >/dev/null 2>&1; then
+        log_info "Installing curl first..."
+        ${SUDO_CMD} apt-get install -y curl
+    fi
+    
     $INSTALL_CMD $PACKAGES
     log_success "Package installation complete"
 }

@@ -6,21 +6,31 @@ Quick setup scripts for new VMs and containers. These scripts provide a modern d
 
 ### One-liner VM Setup
 ```bash
+# Using curl (preferred)
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/vm-install.sh | bash
+
+# Using wget (if curl not available)
+wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/vm-install.sh | bash
 ```
 
 ### One-liner SSH Setup for Dotfiles
 ```bash
+# Using curl (preferred)
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/setup-dotfiles-ssh.sh | bash
+
+# Using wget (if curl not available)
+wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/setup-dotfiles-ssh.sh | bash
 ```
 
 ### Complete Workflow
 ```bash
 # 1. Set up VM with essential tools
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/vm-install.sh | bash
+# OR: wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/vm-install.sh | bash
 
-# 2. Set up SSH access to private dotfiles
+# 2. Set up SSH access to private dotfiles  
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/setup-dotfiles-ssh.sh | bash
+# OR: wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/setup-dotfiles-ssh.sh | bash
 
 # 3. Your dotfiles are now cloned and ready to use!
 ```
