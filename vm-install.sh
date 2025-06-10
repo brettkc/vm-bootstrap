@@ -7,7 +7,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Logging functions
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -24,337 +24,148 @@ check_sudo() {
     fi
 }
 
-# Function to setup deploy key for dotfiles
-setup_deploy_key_for_dotfiles() {
-    log_info "Setting up deploy key for secure dotfiles access..."
+# Detect OS and set install commands
+detect_os() {
+    log_info "Detecting operating system..."
+    check_sudo
     
-    # Create SSH directory if it doesn't exist
-    mkdir -p ~/.ssh
-    chmod 700 ~/.ssh
-    
-    # Check if deploy key already exists
-    if [ -f ~/.ssh/dotfiles_deploy_key ]; then
-        log_warn "Deploy key already exists at ~/.ssh/dotfiles_deploy_key"
-        echo "Do you want to:"
-        echo "1. Use existing key"
-        echo "2. Generate new key (will overwrite)"
-        echo "3. Exit"
-        read -r choice
-        case $choice in
-            1) log_info "Using existing deploy key..." ;;
-            2) 
-                log_info "Generating new deploy key..."
-                rm -f ~/.ssh/dotfiles_deploy_key ~/.ssh/dotfiles_deploy_key.pub
-                ;;
-            3) exit 0 ;;
-            *) log_error "Invalid choice. Exiting."; exit 1 ;;
-        esac
-    fi
-    
-    # Generate dedicated deploy key if it doesn't exist
-    if [ ! -f ~/.ssh/dotfiles_deploy_key ]; then
-        log_info "Generating dedicated deploy key for dotfiles..."
-        
-        # Check for required tools
-        if ! command -v ssh-keygen >/dev/null 2>&1; then
-            log_error "ssh-keygen not found. Installing SSH tools..."
-            
-            # Check sudo requirements
-            check_sudo
-            
-            if command -v pacman >/dev/null 2>&1; then
-                ${SUDO_CMD} pacman -S --noconfirm openssh
-            elif command -v apt-get >/dev/null 2>&1; then
-                ${SUDO_CMD} apt-get update && ${SUDO_CMD} apt-get install -y openssh-client
-            elif command -v dnf >/dev/null 2>&1; then
-                ${SUDO_CMD} dnf install -y openssh-clients
-            else
-                log_error "Cannot install SSH tools automatically. Please install openssh/ssh-client package."
-                exit 1
-            fi
-        fi
-        
-        # Get hostname (fallback if hostname command not available)
-        if command -v hostname >/dev/null 2>&1; then
-            host_name=$(hostname)
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if command -v apt-get >/dev/null 2>&1; then
+            OS="ubuntu"
+            INSTALL_CMD="${SUDO_CMD} apt-get install -y"
+            UPDATE_CMD="${SUDO_CMD} apt-get update"
+            PACKAGES="git neovim tmux zsh curl tree htop fzf openssh-client"
+        elif command -v pacman >/dev/null 2>&1; then
+            OS="arch"
+            INSTALL_CMD="${SUDO_CMD} pacman -S --noconfirm"
+            UPDATE_CMD="${SUDO_CMD} pacman -Sy"
+            PACKAGES="git neovim tmux zsh curl tree htop fzf openssh"
+        elif command -v dnf >/dev/null 2>&1; then
+            OS="fedora"
+            INSTALL_CMD="${SUDO_CMD} dnf install -y"
+            UPDATE_CMD="${SUDO_CMD} dnf check-update || true"
+            PACKAGES="git neovim tmux zsh curl tree htop fzf openssh-clients"
         else
-            host_name=$(cat /etc/hostname 2>/dev/null || echo "vm")
-        fi
-        
-        ssh-keygen -t ed25519 -C "dotfiles-deploy-${host_name}-$(date +%Y%m%d)" -f ~/.ssh/dotfiles_deploy_key -N ""
-        
-        # Set proper permissions
-        chmod 600 ~/.ssh/dotfiles_deploy_key
-        chmod 644 ~/.ssh/dotfiles_deploy_key.pub
-        
-        log_success "Deploy key generated!"
-    fi
-    
-    # Create or update SSH config entry for dotfiles
-    log_info "Configuring SSH for deploy key..."
-    
-    # Remove existing github-dotfiles entry if it exists
-    if [ -f ~/.ssh/config ]; then
-        # Create backup
-        cp ~/.ssh/config ~/.ssh/config.backup
-        # Remove existing github-dotfiles section
-        sed -i '/^# Dotfiles deploy key configuration$/,/^$/d' ~/.ssh/config 2>/dev/null || true
-        sed -i '/^Host github-dotfiles$/,/^$/d' ~/.ssh/config 2>/dev/null || true
-    fi
-    
-    # Add new SSH config entry
-    cat >> ~/.ssh/config << 'EOF'
-
-# Dotfiles deploy key configuration
-Host github-dotfiles
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/dotfiles_deploy_key
-    IdentitiesOnly yes
-EOF
-    
-    chmod 644 ~/.ssh/config
-    
-    # Display deploy key for GitHub
-    echo ""
-    echo "=============================================================================="
-    log_success "Deploy key ready! Add this as a Deploy Key to your dotfiles repository:"
-    echo "=============================================================================="
-    echo ""
-    cat ~/.ssh/dotfiles_deploy_key.pub
-    echo ""
-    echo "=============================================================================="
-    echo ""
-    log_info "Steps to add deploy key to GitHub:"
-    echo ""
-    echo "  1. Copy the key above (triple-click to select all)"
-    echo "  2. Go to your dotfiles repository on GitHub"
-    echo "  3. Click: Settings → Deploy keys → Add deploy key"
-    echo "  4. Title: 'VM Deploy Key - $(cat /etc/hostname 2>/dev/null || echo "vm") - $(date +%Y-%m-%d)'"
-    echo "  5. Paste the key in the 'Key' field"
-    echo "  6. IMPORTANT: Leave 'Allow write access' UNCHECKED (read-only)"
-    echo "  7. Click 'Add key'"
-    echo ""
-    echo "=============================================================================="
-    echo ""
-    echo "Press Enter when you've added the deploy key to continue..."
-    read -r
-    
-    # Test connection using the deploy key
-    log_info "Testing deploy key connection to GitHub..."
-    
-    # Test with timeout to avoid hanging
-    if timeout 10 ssh -T github-dotfiles 2>&1 | grep -q "successfully authenticated"; then
-        log_success "Deploy key connection successful!"
-        
-        # Get dotfiles repo info
-        echo ""
-        echo "Enter your GitHub username:"
-        read -r github_username
-        
-        if [ -z "$github_username" ]; then
-            log_error "Username cannot be empty"
+            log_error "Unsupported Linux distribution"
             exit 1
         fi
-        
-        echo "Enter your dotfiles repository name [dotfiles]:"
-        read -r repo_name
-        repo_name=${repo_name:-dotfiles}
-        
-        # Ask about destination directory
-        echo "Clone to which directory? [~/dotfiles]:"
-        read -r clone_dir
-        clone_dir=${clone_dir:-~/dotfiles}
-        
-        # Expand tilde
-        clone_dir=$(eval echo "$clone_dir")
-        
-        # Check if directory exists
-        if [ -d "$clone_dir" ]; then
-            log_warn "Directory $clone_dir already exists"
-            echo "Do you want to:"
-            echo "1. Remove and re-clone"
-            echo "2. Skip cloning"
-            echo "3. Clone to different location"
-            read -r dir_choice
-            case $dir_choice in
-                1) 
-                    log_info "Removing existing directory..."
-                    rm -rf "$clone_dir"
-                    ;;
-                2) 
-                    log_info "Skipping clone. Deploy key is ready for manual use."
-                    show_usage_examples "$github_username" "$repo_name"
-                    return 0
-                    ;;
-                3)
-                    echo "Enter new directory path:"
-                    read -r clone_dir
-                    clone_dir=$(eval echo "$clone_dir")
-                    ;;
-                *) 
-                    log_error "Invalid choice. Exiting."
-                    exit 1
-                    ;;
-            esac
-        fi
-        
-        # Clone using deploy key
-        log_info "Cloning $github_username/$repo_name to $clone_dir..."
-        if git clone github-dotfiles:${github_username}/${repo_name}.git "$clone_dir"; then
-            log_success "Dotfiles cloned successfully to $clone_dir!"
-            
-            # Check for common setup scripts
-            cd "$clone_dir"
-            setup_script_found=false
-            
-            if [ -f install.sh ]; then
-                setup_script_found=true
-                echo ""
-                log_info "Found install.sh in dotfiles."
-                echo "Run the installation script? (y/n) [n]:"
-                read -r run_install
-                if [ "$run_install" = "y" ] || [ "$run_install" = "Y" ]; then
-                    log_info "Running ./install.sh..."
-                    bash install.sh
-                    log_success "Installation script completed!"
-                fi
-            elif [ -f setup.sh ]; then
-                setup_script_found=true
-                echo ""
-                log_info "Found setup.sh in dotfiles."
-                echo "Run the setup script? (y/n) [n]:"
-                read -r run_setup
-                if [ "$run_setup" = "y" ] || [ "$run_setup" = "Y" ]; then
-                    log_info "Running ./setup.sh..."
-                    bash setup.sh
-                    log_success "Setup script completed!"
-                fi
-            elif [ -f Makefile ]; then
-                setup_script_found=true
-                echo ""
-                log_info "Found Makefile in dotfiles."
-                echo "Run 'make install'? (y/n) [n]:"
-                read -r run_make
-                if [ "$run_make" = "y" ] || [ "$run_make" = "Y" ]; then
-                    log_info "Running make install..."
-                    make install
-                    log_success "Make install completed!"
-                fi
-            fi
-            
-            if [ "$setup_script_found" = false ]; then
-                log_info "No standard setup script found (install.sh, setup.sh, Makefile)"
-                log_info "You can manually run your dotfiles setup from $clone_dir"
-            fi
-            
-        else
-            log_error "Failed to clone dotfiles repository."
-            log_error "Please check:"
-            log_error "  - Repository name: $github_username/$repo_name"
-            log_error "  - Deploy key was added correctly"
-            log_error "  - Repository exists and is accessible"
-            echo ""
-            show_usage_examples "$github_username" "$repo_name"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        OS="macos"
+        if ! command -v brew >/dev/null 2>&1; then
+            log_error "Homebrew not found. Install from https://brew.sh"
             exit 1
         fi
+        INSTALL_CMD="brew install"
+        UPDATE_CMD="brew update"
+        PACKAGES="git neovim tmux zsh curl tree htop fzf openssh"
     else
-        log_error "Deploy key connection failed."
-        echo ""
-        log_info "Troubleshooting steps:"
-        echo "  1. Verify the deploy key was added to your GitHub repository"
-        echo "  2. Make sure you copied the entire key (including ssh-ed25519 prefix)"
-        echo "  3. Check that the repository exists and is accessible"
-        echo "  4. Test manually with: ssh -T github-dotfiles"
-        echo ""
-        show_usage_examples "YOUR_USERNAME" "dotfiles"
+        log_error "Unsupported operating system: $OSTYPE"
         exit 1
     fi
     
-    # Show final status
-    echo ""
-    log_success "Dotfiles setup complete!"
-    echo ""
-    log_info "Deploy key details:"
-    echo "  • Key file: ~/.ssh/dotfiles_deploy_key"
-    echo "  • SSH alias: github-dotfiles"
-    echo "  • Access: Read-only to your dotfiles repository"
-    echo ""
-    log_info "To remove access later:"
-    echo "  • Go to your repo Settings → Deploy keys → Delete the key"
-    echo "  • Or run: rm ~/.ssh/dotfiles_deploy_key*"
+    log_success "Detected OS: $OS"
 }
 
-# Show usage examples
-show_usage_examples() {
-    local username=$1
-    local repo=$2
+# Install packages
+install_packages() {
+    log_info "Installing packages..."
+    $UPDATE_CMD
+    $INSTALL_CMD $PACKAGES
+    log_success "Package installation complete"
+}
+
+# Basic zsh setup
+setup_zsh() {
+    log_info "Setting up zsh..."
     
-    echo ""
-    log_info "Manual usage examples:"
-    echo ""
-    echo "Clone repository:"
-    echo "  git clone github-dotfiles:$username/$repo.git ~/dotfiles"
-    echo ""
-    echo "Test SSH connection:"
-    echo "  ssh -T github-dotfiles"
-    echo ""
-    echo "Pull updates (from within repo):"
-    echo "  git pull origin main"
+    cat > ~/.zshrc << 'EOF'
+# Basic zsh config
+export EDITOR=nvim
+HISTFILE=~/.histfile
+HISTSIZE=1000
+SAVEHIST=1000
+
+# Basic aliases
+alias ll='ls -la'
+alias gs='git status' 
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+alias vim='nvim'
+
+# Simple prompt
+PROMPT='%F{green}%n@%m%f:%F{blue}%~%f$ '
+
+# Enable completion
+autoload -Uz compinit
+compinit
+EOF
+    
+    log_success "Zsh configuration complete"
+}
+
+# Basic tmux setup  
+setup_tmux() {
+    log_info "Setting up tmux..."
+    
+    cat > ~/.tmux.conf << 'EOF'
+# Basic tmux config
+set -g mouse on
+set -g base-index 1
+setw -g pane-base-index 1
+
+# Better splitting
+bind | split-window -h
+bind - split-window -v
+
+# Vim navigation
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+
+# Status bar
+set -g status-bg black
+set -g status-fg white
+set -g status-right '#(whoami)@#h %Y-%m-%d %H:%M'
+EOF
+    
+    log_success "Tmux configuration complete"
+}
+
+# Set zsh as default shell
+set_zsh_default() {
+    if command -v zsh >/dev/null 2>&1 && [ "$SHELL" != "$(command -v zsh)" ]; then
+        log_info "Setting zsh as default shell..."
+        chsh -s "$(command -v zsh)" 2>/dev/null || log_warn "Could not change default shell"
+    fi
 }
 
 # Main function
 main() {
-    echo "=============================================================================="
-    echo "                        Dotfiles Deploy Key Setup"
-    echo "=============================================================================="
-    echo ""
-    log_info "This script will:"
-    echo "  • Generate a dedicated SSH deploy key for your dotfiles repository"
-    echo "  • Configure SSH to use this key for GitHub access"
-    echo "  • Help you add the key to your GitHub repository"
-    echo "  • Clone your dotfiles repository (optional)"
-    echo ""
-    echo "Deploy keys provide:"
-    echo "  ✓ Read-only access (secure)"
-    echo "  ✓ Repository-specific access"
-    echo "  ✓ Easy to revoke from GitHub"
-    echo ""
+    log_info "Starting VM setup..."
     
-    # Only prompt if not being piped (stdin is a terminal)
+    # Check if running interactively
     if [ -t 0 ]; then
-        echo "Press Ctrl+C to cancel, or Enter to continue..."
+        echo "Press Enter to continue or Ctrl+C to cancel..."
         read -r
     else
-        log_info "Running in non-interactive mode (piped execution)"
-        sleep 2
+        log_info "Running automatically (piped mode)"
     fi
     
-    setup_deploy_key_for_dotfiles
+    detect_os
+    install_packages
+    setup_zsh
+    setup_tmux
+    set_zsh_default
+    
+    log_success "VM setup complete!"
+    echo ""
+    log_info "Next steps:"
+    echo "  • Run 'zsh' to start using zsh"
+    echo "  • Run 'tmux' to start terminal multiplexer" 
+    echo "  • Use aliases: ll, gs, vim (→nvim), etc."
 }
 
-# Check for help flag
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "Dotfiles Deploy Key Setup"
-    echo ""
-    echo "Usage: $0"
-    echo ""
-    echo "This script sets up a secure SSH deploy key for accessing your private"
-    echo "dotfiles repository on GitHub. Deploy keys provide read-only, repository-"
-    echo "specific access that can be easily managed and revoked."
-    echo ""
-    echo "The script will:"
-    echo "  1. Generate an SSH key dedicated to dotfiles access"
-    echo "  2. Configure SSH with a github-dotfiles alias"
-    echo "  3. Guide you through adding the key to GitHub"
-    echo "  4. Test the connection"
-    echo "  5. Optionally clone your dotfiles repository"
-    echo ""
-    echo "Options:"
-    echo "  -h, --help    Show this help message"
-    echo ""
-    exit 0
-fi
-
-# Run main function
 main "$@"
