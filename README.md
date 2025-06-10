@@ -6,13 +6,11 @@ Quick setup scripts for new VMs and containers. These scripts provide a modern d
 
 ### One-liner VM Setup
 ```bash
-# Install essential dev tools + modern shell setup
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/vm-install.sh | bash
 ```
 
 ### One-liner SSH Setup for Dotfiles
 ```bash
-# Set up secure SSH deploy key for private dotfiles access
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/vm-bootstrap/main/setup-dotfiles-ssh.sh | bash
 ```
 
