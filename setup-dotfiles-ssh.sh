@@ -206,4 +206,148 @@ EOF
             
             # Check for common setup scripts
             cd "$clone_dir"
-            setup
+            setup_script_found=false
+            
+            if [ -f install.sh ]; then
+                setup_script_found=true
+                echo ""
+                log_info "Found install.sh in dotfiles."
+                echo "Run the installation script? (y/n) [n]:"
+                read -r run_install
+                if [ "$run_install" = "y" ] || [ "$run_install" = "Y" ]; then
+                    log_info "Running ./install.sh..."
+                    bash install.sh
+                    log_success "Installation script completed!"
+                fi
+            elif [ -f setup.sh ]; then
+                setup_script_found=true
+                echo ""
+                log_info "Found setup.sh in dotfiles."
+                echo "Run the setup script? (y/n) [n]:"
+                read -r run_setup
+                if [ "$run_setup" = "y" ] || [ "$run_setup" = "Y" ]; then
+                    log_info "Running ./setup.sh..."
+                    bash setup.sh
+                    log_success "Setup script completed!"
+                fi
+            elif [ -f Makefile ]; then
+                setup_script_found=true
+                echo ""
+                log_info "Found Makefile in dotfiles."
+                echo "Run 'make install'? (y/n) [n]:"
+                read -r run_make
+                if [ "$run_make" = "y" ] || [ "$run_make" = "Y" ]; then
+                    log_info "Running make install..."
+                    make install
+                    log_success "Make install completed!"
+                fi
+            fi
+            
+            if [ "$setup_script_found" = false ]; then
+                log_info "No standard setup script found (install.sh, setup.sh, Makefile)"
+                log_info "You can manually run your dotfiles setup from $clone_dir"
+            fi
+            
+        else
+            log_error "Failed to clone dotfiles repository."
+            log_error "Please check:"
+            log_error "  - Repository name: $github_username/$repo_name"
+            log_error "  - Deploy key was added correctly"
+            log_error "  - Repository exists and is accessible"
+            echo ""
+            show_usage_examples "$github_username" "$repo_name"
+            exit 1
+        fi
+    else
+        log_error "Deploy key connection failed."
+        echo ""
+        log_info "Troubleshooting steps:"
+        echo "  1. Verify the deploy key was added to your GitHub repository"
+        echo "  2. Make sure you copied the entire key (including ssh-ed25519 prefix)"
+        echo "  3. Check that the repository exists and is accessible"
+        echo "  4. Test manually with: ssh -T github-dotfiles"
+        echo ""
+        show_usage_examples "YOUR_USERNAME" "dotfiles"
+        exit 1
+    fi
+    
+    # Show final status
+    echo ""
+    log_success "Dotfiles setup complete!"
+    echo ""
+    log_info "Deploy key details:"
+    echo "  • Key file: ~/.ssh/dotfiles_deploy_key"
+    echo "  • SSH alias: github-dotfiles"
+    echo "  • Access: Read-only to your dotfiles repository"
+    echo ""
+    log_info "To remove access later:"
+    echo "  • Go to your repo Settings → Deploy keys → Delete the key"
+    echo "  • Or run: rm ~/.ssh/dotfiles_deploy_key*"
+}
+
+# Show usage examples
+show_usage_examples() {
+    local username=$1
+    local repo=$2
+    
+    echo ""
+    log_info "Manual usage examples:"
+    echo ""
+    echo "Clone repository:"
+    echo "  git clone github-dotfiles:$username/$repo.git ~/dotfiles"
+    echo ""
+    echo "Test SSH connection:"
+    echo "  ssh -T github-dotfiles"
+    echo ""
+    echo "Pull updates (from within repo):"
+    echo "  git pull origin main"
+}
+
+# Main function
+main() {
+    echo "=============================================================================="
+    echo "                        Dotfiles Deploy Key Setup"
+    echo "=============================================================================="
+    echo ""
+    log_info "This script will:"
+    echo "  • Generate a dedicated SSH deploy key for your dotfiles repository"
+    echo "  • Configure SSH to use this key for GitHub access"
+    echo "  • Help you add the key to your GitHub repository"
+    echo "  • Clone your dotfiles repository (optional)"
+    echo ""
+    echo "Deploy keys provide:"
+    echo "  ✓ Read-only access (secure)"
+    echo "  ✓ Repository-specific access"
+    echo "  ✓ Easy to revoke from GitHub"
+    echo ""
+    echo "Press Ctrl+C to cancel, or Enter to continue..."
+    read -r
+    
+    setup_deploy_key_for_dotfiles
+}
+
+# Check for help flag
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "Dotfiles Deploy Key Setup"
+    echo ""
+    echo "Usage: $0"
+    echo ""
+    echo "This script sets up a secure SSH deploy key for accessing your private"
+    echo "dotfiles repository on GitHub. Deploy keys provide read-only, repository-"
+    echo "specific access that can be easily managed and revoked."
+    echo ""
+    echo "The script will:"
+    echo "  1. Generate an SSH key dedicated to dotfiles access"
+    echo "  2. Configure SSH with a github-dotfiles alias"
+    echo "  3. Guide you through adding the key to GitHub"
+    echo "  4. Test the connection"
+    echo "  5. Optionally clone your dotfiles repository"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help    Show this help message"
+    echo ""
+    exit 0
+fi
+
+# Run main function
+main "$@"
